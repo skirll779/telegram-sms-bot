@@ -1,8 +1,7 @@
-import telebot
 import re
-from flask import Flask, request
-import threading
 import os
+import telebot
+from flask import Flask, request
 
 # ======================
 # CONFIGURACIÓN
@@ -14,25 +13,13 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ======================
-# BOT TELEGRAM
-# ======================
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id,
-                     "✅ Bot activo.\nEnvía mensajes o espera OTP.")
-
-
-@bot.message_handler(func=lambda m: True)
-def echo(message):
-    bot.send_message(message.chat.id, "📩 Mensaje recibido")
-
-
-# ======================
 # OTP LOGIC
 # ======================
 def extract_otp(message):
     patterns = [
-        r'\b(\d{4})\b', r'\b(\d{6})\b', r'código[:\s]+(\d{4,6})',
+        r'\b(\d{4})\b',
+        r'\b(\d{6})\b',
+        r'código[:\s]+(\d{4,6})',
         r'OTP[:\s]+(\d{4,6})'
     ]
     for p in patterns:
@@ -53,33 +40,45 @@ def send_to_telegram(message, sender):
 
 
 # ======================
-# WEBHOOK & PREVIEW
+# TELEGRAM WEBHOOK
 # ======================
-@app.route('/')
-def index():
-    public_url = f"https://{os.environ.get('REPLIT_DEV_DOMAIN')}"
-    return f"""
-    <h1>✅ Bot activo</h1>
-    <p>El servidor y el bot de Telegram están funcionando correctamente.</p>
-    <p><b>Tu URL de Webhook es:</b> <code>{public_url}/webhook</code></p>
-    """
+@app.route("/webhook", methods=["POST"])
+def telegram_webhook():
+    data = request.get_json()
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.json
-    sender = data.get('sender', 'Desconocido')
-    message = data.get('message', '')
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "")
+        bot.send_message(chat_id, "📩 Mensaje recibido")
+
+    return "OK", 200
+
+
+# ======================
+# SMS FORWARDER WEBHOOK
+# ======================
+@app.route("/sms", methods=["POST"])
+def sms_webhook():
+    data = request.get_json()
+    sender = data.get("sender", "Desconocido")
+    message = data.get("message", "")
     send_to_telegram(message, sender)
-    return 'OK'
+    return "OK", 200
 
 
 # ======================
-# ARRANQUE
+# HOME
 # ======================
-def run_flask():
-    app.run(host='0.0.0.0', port=5000)
+@app.route("/")
+def home():
+    return "Bot activo"
 
 
+# ======================
+# ARRANQUE (RAILWAY)
+# ======================
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    bot.polling(none_stop=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080))
+    )
